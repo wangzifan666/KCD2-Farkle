@@ -5,7 +5,7 @@
   import GameBoard from './components/game/GameBoard.svelte';
   import DiceSelector from './components/selection/DiceSelector.svelte';
   import DraftSelector from './components/selection/DraftSelector.svelte';
-  import { appView, gameState, floatingScore, triggerCommentary, celebrationLevel } from '$lib/stores/gameStore';
+  import { appView, gameState, myRole, floatingScore, triggerCommentary, celebrationLevel } from '$lib/stores/gameStore';
   import type { AppView } from '$lib/stores/gameStore';
   import { getRoomCodeFromUrl } from '$lib/network/trystero';
 
@@ -14,7 +14,7 @@
   let lobbyMode = $state<'choose' | 'create' | 'join'>(urlRoomCode ? 'join' : 'choose');
 
   let view = $state<AppView>('lobby');
-  appView.subscribe(v => { view = v; });
+  appView.subscribe(v => { view = v; if (v === 'lobby') lobbyMode = 'choose'; });
   let selectionMode = $state<'free' | 'draft'>('free');
   gameState.subscribe(s => { selectionMode = s.config.selectionMode; });
 
@@ -39,6 +39,22 @@
       celebrate: (level: 1 | 2 | 3 = 2) => {
         celebrationLevel.set(level);
         console.info(`[Farkle Debug] celebration level ${level} triggered`);
+      },
+      /** 模拟游戏结束: __farkle.gameOver('host') or __farkle.gameOver('guest', 'guest') */
+      gameOver: (winner: 'host' | 'guest' = 'host', asRole?: 'host' | 'guest') => {
+        if (asRole) myRole.set(asRole);
+        appView.set('game');
+        gameState.update(s => ({
+          ...s,
+          phase: 'game_over',
+          winner,
+          players: [
+            { ...s.players[0], totalScore: winner === 'host' ? 4200 : 1800 },
+            { ...s.players[1], totalScore: winner === 'guest' ? 4100 : 2300 },
+          ],
+        }));
+        setTimeout(() => celebrationLevel.set(3), 300);
+        console.info(`[Farkle Debug] game over: winner=${winner}, asRole=${asRole ?? 'unchanged'}`);
       },
     };
     console.info('%c[Farkle Debug] 调试接口已挂载到 window.__farkle', 'color:#d4a843;font-weight:bold');

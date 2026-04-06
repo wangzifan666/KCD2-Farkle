@@ -5,7 +5,7 @@ import type {
 import { DEFAULT_CONFIG } from '$lib/game/types';
 import { createDice, rollDice, isBust, isHotDice, resetDiceForHotDice, keepDice, evaluateSelection } from '$lib/game/dice';
 import { getSpecialDice } from '$lib/game/diceRegistry';
-import { sendMessage, onMessage } from '$lib/network/trystero';
+import { sendMessage, onMessage, leaveRoom } from '$lib/network/trystero';
 import { createCommitment, verifyCommitment, generateSeed } from '$lib/network/commitReveal';
 import type { GameMessage, RpsChoice } from '$lib/network/protocol';
 
@@ -679,6 +679,39 @@ export function endTurn(isBustTurn = false) {
 }
 
 // ─────────────────────────────────────────────
+//  对局结束 / 重玩
+// ─────────────────────────────────────────────
+
+/**
+ * 内部：将所有状态重置并返回大厅。
+ * 被 rematchLobby()（主动）和 rematch_lobby 消息处理（被动）共用。
+ */
+function _resetToLobby() {
+  stopIdleCommentary();
+  leaveRoom();
+  gameState.set(createInitialState());
+  diceSelection.set(createInitialSelection());
+  selectedDieIds.set([]);
+  awaitingRoll.set(true);
+  celebrationLevel.set(0);
+  rpsState.set({ step: 'choosing' });
+  myRpsCommitment = null;
+  theirRpsCommitment = null;
+  isRollingInProgress = false;
+  appView.set('lobby');
+}
+
+/**
+ * 房主调用：广播返回大厅指令，双方同步重置。
+ * 客人端收到 rematch_lobby 消息后会自动调用 _resetToLobby()。
+ */
+export function rematchLobby() {
+  sendMessage({ type: 'rematch_lobby' });
+  // 延迟 150ms 确保消息在断开连接前已发出
+  setTimeout(() => _resetToLobby(), 150);
+}
+
+// ─────────────────────────────────────────────
 //  猜拳状态
 // ─────────────────────────────────────────────
 
@@ -887,6 +920,11 @@ export function initMessageHandler(): () => void {
         applyDraftPick(msg.diceId, opponentRole);
         break;
       }
+
+      case 'rematch_lobby':
+        // 房主已广播返回大厅，客人端同步重置
+        _resetToLobby();
+        break;
     }
   });
 }

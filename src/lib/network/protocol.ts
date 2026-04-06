@@ -42,4 +42,8 @@ export type GameMessage =
   /** 加入方接入后发送，携带自己的显示名 */
   | { type: 'player_hello'; name: string }
   /** 房主回应，确认双方身份 */
-  | { type: 'player_ack'; hostName: string };
+  | { type: 'player_ack'; hostName: string }
+
+  // ── 对局结束操作 ──────────────────────────────
+  /** 房主广播：双方均返回主界面，断开本局连接 */
+  | { type: 'rematch_lobby' };

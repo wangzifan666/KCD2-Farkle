@@ -5,6 +5,7 @@
   import ActionBar from './ActionBar.svelte';
   import CommentaryOverlay from '../overlay/CommentaryOverlay.svelte';
   import ParticleEffect from '../overlay/ParticleEffect.svelte';
+  import GameOverDialog from '../overlay/GameOverDialog.svelte';
   import PhasePlacard from './PhasePlacard.svelte';
   import {
     gameState, isMyTurn, selectedDieIds, statusMessage, awaitingRoll, myRole,
@@ -96,6 +97,8 @@
 <CommentaryOverlay />
 <!-- 粒子庆祝 -->
 <ParticleEffect />
+<!-- 游戏结束对话框 -->
+<GameOverDialog />
 
 <style>
   .game-board {
