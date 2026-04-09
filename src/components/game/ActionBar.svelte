@@ -2,6 +2,7 @@
   import {
     gameState, isMyTurn, selectionScore, selectedDieIds, awaitingRoll,
     performRoll, confirmSelection, bankScore, handleHotDice,
+    isOpponentDisconnected,
   } from '$lib/stores/gameStore';
 
   let myTurn = $state(false);
@@ -11,6 +12,7 @@
   let hasSelection = $state(false);
   let turnScoreVal = $state(0);
   let needsRoll = $state(true);
+  let opponentOffline = $state(false);
 
   isMyTurn.subscribe(v => { myTurn = v; });
   gameState.subscribe($s => {
@@ -21,18 +23,19 @@
   selectionScore.subscribe(v => { selection = v; });
   selectedDieIds.subscribe(ids => { hasSelection = ids.length > 0; });
   awaitingRoll.subscribe(v => { needsRoll = v; });
+  isOpponentDisconnected.subscribe(v => { opponentOffline = v; });
 
   // 可以掷骰：回合开始时 / 锁定骰子后
   const canRoll = $derived(
-    myTurn && phase === 'selecting' && needsRoll && !hasSelection
+    myTurn && phase === 'selecting' && needsRoll && !hasSelection && !opponentOffline
   );
   // 可以锁定：刚掷完骰且选择了有效骰子
   const canConfirm = $derived(
-    myTurn && phase === 'selecting' && !needsRoll && hasSelection && selection.valid
+    myTurn && phase === 'selecting' && !needsRoll && hasSelection && selection.valid && !opponentOffline
   );
   // 可以结算：锁定后（已有累积分）
   const canBank = $derived(
-    myTurn && phase === 'selecting' && needsRoll && turnScoreVal > 0
+    myTurn && phase === 'selecting' && needsRoll && turnScoreVal > 0 && !opponentOffline
   );
   const isHotDice = $derived(phase === 'hot_dice');
 </script>
@@ -55,7 +58,7 @@
     </div>
 
   {:else if isHotDice}
-    <button class="btn-action btn-hot" onclick={handleHotDice}>
+    <button class="btn-action btn-hot" onclick={handleHotDice} disabled={opponentOffline}>
       🔥 满盘！重新掷全部骰子
     </button>
 

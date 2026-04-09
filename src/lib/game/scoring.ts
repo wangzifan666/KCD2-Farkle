@@ -90,11 +90,21 @@ function computeScore(normals: Exclude<DieFace, 0>[], jokers: number): number {
 function computeScoreNoJokers(values: Exclude<DieFace, 0>[]): number {
   if (values.length === 0) return 0;
 
-  // 5枚及以下：尝试顺子
+  // 5枚及以上：先整体尝试顺子
   if (values.length >= 5) {
     const straight = detectStraight(values as DieFace[]);
     if (straight > 0) return straight;
   }
+
+  // ── 关键修复 ────────────────────────────────────────────────────────────
+  // 当选中 6 枚骰子时，可能是"5枚顺子 + 1枚单只"的复合组合。
+  // 例如 {1,1,2,3,4,5} = 顺子(1-2-3-4-5)500 + 单1(100) = 600。
+  // 若不做此处理，下方面值计数循环会因为 face=2/3/4 单独得分为0而整体拒绝。
+  if (values.length === 6) {
+    const extracted = tryExtractFiveStraightScore(values as DieFace[]);
+    if (extracted > 0) return extracted;
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   const counts = countFaces(values as DieFace[]);
   let score = 0;
@@ -107,6 +117,42 @@ function computeScoreNoJokers(values: Exclude<DieFace, 0>[]): number {
     score += faceScore;
   }
   return score;
+}
+
+/**
+ * 尝试从 6 枚骰子中提取一个 5 连顺子，剩余 1 枚单独计分。
+ * 若成立返回总分，否则返回 0。
+ *
+ * 处理场景：
+ *   {1,1,2,3,4,5} = 顺子(1-2-3-4-5) 500 + 单1 100 = 600
+ *   {1,2,3,4,5,5} = 顺子(1-2-3-4-5) 500 + 单5  50 = 550
+ *   {1,2,3,4,5,6} 已在 detectStraight 中处理（1500），不会到达此处
+ */
+function tryExtractFiveStraightScore(values: DieFace[]): number {
+  const PATTERNS: [DieFace[], number][] = [
+    [[1, 2, 3, 4, 5], 500],
+    [[2, 3, 4, 5, 6], 750],
+  ];
+
+  for (const [pattern, patternScore] of PATTERNS) {
+    // 尝试从 values 中消耗掉 pattern 里的每个面值
+    const pool = [...values];
+    let matched = true;
+    for (const face of pattern) {
+      const idx = pool.indexOf(face);
+      if (idx === -1) { matched = false; break; }
+      pool.splice(idx, 1);
+    }
+    if (!matched) continue;
+
+    // pool 此时应剩余 1 枚骰子
+    if (pool.length !== 1) continue;
+
+    const remFace = pool[0] as Exclude<DieFace, 0>;
+    const remScore = scoreForFaceCount(remFace, 1);
+    if (remScore > 0) return patternScore + remScore;
+  }
+  return 0;
 }
 
 /**

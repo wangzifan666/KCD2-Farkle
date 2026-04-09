@@ -6,11 +6,13 @@
   import CommentaryOverlay from '../overlay/CommentaryOverlay.svelte';
   import ParticleEffect from '../overlay/ParticleEffect.svelte';
   import GameOverDialog from '../overlay/GameOverDialog.svelte';
+  import DisconnectOverlay from '../overlay/DisconnectOverlay.svelte';
   import PhasePlacard from './PhasePlacard.svelte';
   import {
     gameState, isMyTurn, selectedDieIds, statusMessage, awaitingRoll, myRole,
     toggleDieSelection, onRollAnimationDone,
     startIdleCommentary, stopIdleCommentary,
+    isOpponentDisconnected,
   } from '$lib/stores/gameStore';
   import { getDieDefinition } from '$lib/game/diceRegistry';
   import type { Die, PlayerId } from '$lib/game/types';
@@ -24,6 +26,7 @@
   let hostDice = $state<string[]>([]);
   let guestDice = $state<string[]>([]);
   let role = $state<PlayerId>('host');
+  let opponentOffline = $state(false);
 
   gameState.subscribe(s => { dice = s.dice; phase = s.phase; hostDice = s.hostDice; guestDice = s.guestDice; });
   isMyTurn.subscribe(v => { myTurn = v; });
@@ -31,13 +34,15 @@
   statusMessage.subscribe(v => { toastMsg = v; });
   awaitingRoll.subscribe(v => { needsRoll = v; });
   myRole.subscribe(v => { role = v; });
+  isOpponentDisconnected.subscribe(v => { opponentOffline = v; });
 
   // 游戏星现时开启酒馆环境音，离开时停止
   onMount(() => startIdleCommentary());
   onDestroy(() => stopIdleCommentary());
 
   const isRolling = $derived(phase === 'rolling' || phase === 'bust');
-  const canSelect = $derived(phase === 'selecting' && myTurn && !needsRoll);
+  // 对手断线时禁用选中操作
+  const canSelect = $derived(phase === 'selecting' && myTurn && !needsRoll && !opponentOffline);
 
   // 当前玩家的特殊骰子列表
   const mySpecialDice = $derived(
@@ -99,6 +104,8 @@
 <ParticleEffect />
 <!-- 游戏结束对话框 -->
 <GameOverDialog />
+<!-- 对手断线提示 -->
+<DisconnectOverlay />
 
 <style>
   .game-board {

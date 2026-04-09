@@ -1,4 +1,4 @@
-import type { GameConfig } from '../game/types';
+import type { GameConfig, GameState, PlayerId } from '../game/types';
 
 // ─────────────────────────────────────────────
 //  P2P 消息协议
@@ -46,4 +46,11 @@ export type GameMessage =
 
   // ── 对局结束操作 ──────────────────────────────
   /** 房主广播：双方均返回主界面，断开本局连接 */
-  | { type: 'rematch_lobby' };
+  | { type: 'rematch_lobby' }
+
+  // ── 断线重连 ──────────────────────────────────
+  /**
+   * 断线方重连后，房主立即发送完整游戏状态快照供其恢复。
+   * yourRole: 通知对方它的身份（防止 host/guest 混淆）
+   */
+  | { type: 'game_state_sync'; state: GameState; yourRole: PlayerId; awaitingRoll: boolean };

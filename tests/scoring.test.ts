@@ -116,9 +116,25 @@ describe('scoreSelection 组合', () => {
     expect(scoreSelection(d(1,5))).toEqual({ score: 150, valid: true });
   });
 
-  // ── 顺子不能有重复值 ──
-  it('1+2+3+4+5+1 不构成6枚顺子 → 无效', () => {
-    expect(scoreSelection(d(1,2,3,4,5,1))).toEqual({ score: 0, valid: false });
+  // ── 顺子 + 单只复合组合 ──
+  it('小顺子(1-5) + 单1 = 600', () => {
+    expect(scoreSelection(d(1,2,3,4,5,1))).toEqual({ score: 600, valid: true });
+  });
+  it('小顺子(1-5) + 单5 = 550', () => {
+    expect(scoreSelection(d(1,2,3,4,5,5))).toEqual({ score: 550, valid: true });
+  });
+  it('中顺子(2-6) + 单1 实为大顺子 = 1500', () => {
+    // {2,3,4,5,6,1} 恰好包含1-6全部面值，识别为大顺子
+    expect(scoreSelection(d(2,3,4,5,6,1))).toEqual({ score: 1500, valid: true });
+  });
+  it('中顺子(2-6) + 单5 = 800', () => {
+    expect(scoreSelection(d(2,3,4,5,6,5))).toEqual({ score: 800, valid: true });
+  });
+  it('小顺子(1-5) + 单2 → 无效（2不得分）', () => {
+    expect(scoreSelection(d(1,2,3,4,5,2))).toEqual({ score: 0, valid: false });
+  });
+  it('中顺子(2-6) + 单3 → 无效（3不得分）', () => {
+    expect(scoreSelection(d(2,3,4,5,6,3))).toEqual({ score: 0, valid: false });
   });
 });
 

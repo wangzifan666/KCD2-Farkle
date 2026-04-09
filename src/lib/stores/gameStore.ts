@@ -5,7 +5,7 @@ import type {
 import { DEFAULT_CONFIG } from '$lib/game/types';
 import { createDice, rollDice, isBust, isHotDice, resetDiceForHotDice, keepDice, evaluateSelection } from '$lib/game/dice';
 import { getSpecialDice } from '$lib/game/diceRegistry';
-import { sendMessage, onMessage, leaveRoom } from '$lib/network/trystero';
+import { sendMessage, onMessage, leaveRoom, networkState } from '$lib/network/trystero';
 import { createCommitment, verifyCommitment, generateSeed } from '$lib/network/commitReveal';
 import type { GameMessage, RpsChoice } from '$lib/network/protocol';
 
@@ -15,6 +15,74 @@ import type { GameMessage, RpsChoice } from '$lib/network/protocol';
 
 export type AppView = 'lobby' | 'rps' | 'dice_selection' | 'game';
 export const appView = writable<AppView>('lobby');
+
+// ─────────────────────────────────────────────
+//  断线检测
+// ─────────────────────────────────────────────
+
+/**
+ * true = 对手正处于断线中，游戏操作应被冻结。
+ * 对手重连后自动恢复为 false。
+ */
+export const isOpponentDisconnected = writable(false);
+
+/** 重连失败后允许手动返回大厅的倒计时（60s） */
+export const reconnectCountdown = writable<number | null>(null);
+
+let reconnectCountdownTimer: ReturnType<typeof setInterval> | null = null;
+
+function startReconnectCountdown(seconds = 60) {
+  reconnectCountdown.set(seconds);
+  reconnectCountdownTimer = setInterval(() => {
+    reconnectCountdown.update(n => {
+      if (n === null || n <= 1) {
+        clearInterval(reconnectCountdownTimer!);
+        reconnectCountdownTimer = null;
+        return null;
+      }
+      return n - 1;
+    });
+  }, 1000);
+}
+
+function stopReconnectCountdown() {
+  if (reconnectCountdownTimer !== null) {
+    clearInterval(reconnectCountdownTimer);
+    reconnectCountdownTimer = null;
+  }
+  reconnectCountdown.set(null);
+}
+
+// 订阅网络状态变化
+// 注意：模块加载时立即订阅，无需手动调用
+networkState.subscribe(ns => {
+  const currentView = get(appView);
+
+  if (ns.status === 'disconnected' && currentView === 'game') {
+    console.warn('[GameStore] 对手断开，冻结游戏操作，等待重连...');
+    isOpponentDisconnected.set(true);
+    startReconnectCountdown(60);
+  }
+
+  if (ns.status === 'connected' && get(isOpponentDisconnected)) {
+    console.log('[GameStore] 对手已重连！取消冻结');
+    stopReconnectCountdown();
+    isOpponentDisconnected.set(false);
+
+    // 如果本端是房主，立即推送状态快照与对方同步
+    if (get(myRole) === 'host') {
+      const $s = get(gameState);
+      const $awaitingRoll = get(awaitingRoll);
+      console.log('[GameStore] 作为房主，发送 game_state_sync');
+      sendMessage({
+        type: 'game_state_sync',
+        state: $s,
+        yourRole: 'guest',
+        awaitingRoll: $awaitingRoll,
+      });
+    }
+  }
+});
 
 // ─────────────────────────────────────────────
 //  角色身份
@@ -707,6 +775,8 @@ export function endTurn(isBustTurn = false) {
  */
 function _resetToLobby() {
   stopIdleCommentary();
+  stopReconnectCountdown();
+  isOpponentDisconnected.set(false);
   leaveRoom();
   gameState.set(createInitialState());
   diceSelection.set(createInitialSelection());
@@ -966,6 +1036,16 @@ export function initMessageHandler(): () => void {
       case 'rematch_lobby':
         // 房主已广播返回大厅，客人端同步重置
         _resetToLobby();
+        break;
+
+      case 'game_state_sync':
+        // 断线重连后，收到房主推送的完整状态快照
+        console.log('[GameStore] 收到 game_state_sync，恢复游戏状态');
+        myRole.set(msg.yourRole);
+        gameState.set(msg.state);
+        awaitingRoll.set(msg.awaitingRoll);
+        selectedDieIds.set([]);
+        appView.set('game');
         break;
     }
   });

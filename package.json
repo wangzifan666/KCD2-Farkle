@@ -23,6 +23,7 @@
     "vitest": "^4.1.2"
   },
   "dependencies": {
+    "@trystero-p2p/mqtt": "^0.23.0",
     "trystero": "^0.23.0"
   }
 }

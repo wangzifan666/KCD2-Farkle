@@ -3,6 +3,7 @@
   import { initRoom, networkState } from '$lib/network/trystero';
   import { sendMessage } from '$lib/network/trystero';
   import { myRole, myName, initMessageHandler, appView } from '$lib/stores/gameStore';
+  import ManualConnect from './ManualConnect.svelte';
 
   let {
     initialCode = '',
@@ -13,10 +14,13 @@
   let roomCode = $state(untrack(() => initialCode));
   let playerName = $state('客人');
   let status = $state('idle');
+  let waitingSince = $state<number | null>(null);
   let joined = $state(false);
+  let showManual = $state(false);
 
   networkState.subscribe(ns => {
     status = ns.status;
+    waitingSince = ns.waitingSince;
   });
 
   function handleJoin() {
@@ -33,6 +37,20 @@
     if (status === 'connected' && joined) {
       sendMessage({ type: 'player_hello', name: playerName });
     }
+  });
+
+  // 已等待秒数
+  let elapsedSeconds = $state(0);
+  $effect(() => {
+    if (status !== 'waiting_peer' || waitingSince === null) {
+      elapsedSeconds = 0;
+      return;
+    }
+    elapsedSeconds = Math.floor((Date.now() - waitingSince) / 1000);
+    const timer = setInterval(() => {
+      elapsedSeconds = Math.floor((Date.now() - (waitingSince ?? Date.now())) / 1000);
+    }, 1000);
+    return () => clearInterval(timer);
   });
 </script>
 
@@ -58,10 +76,29 @@
       加入房间
     </button>
 
-  {:else if status === 'waiting'}
+  {:else if status === 'signaling'}
     <div class="waiting">
       <span class="dot-anim"></span>
-      正在连接房间 <strong>{roomCode}</strong>…
+      正在连接 MQTT 服务器…
+    </div>
+
+  {:else if status === 'waiting_peer'}
+    <div class="waiting">
+      <span class="dot-anim"></span>
+      正在连接房间 <strong>{roomCode}</strong>…{elapsedSeconds > 0 ? `（已等待 ${elapsedSeconds} 秒）` : ''}
+    </div>
+
+  {:else if status === 'timeout'}
+    <div class="timeout-info">
+      <p class="error">⌛ 连接超时（60 秒），未能加入房间</p>
+      {#if !showManual}
+        <p class="hint">请检查房间码是否正确，或让房主重新创建房间</p>
+        <button class="btn-primary" onclick={() => { joined = false; showManual = false; }}>重新输入</button>
+        <button class="btn-manual" onclick={() => showManual = true}>⚡ 手动连接（备用）</button>
+      {:else}
+        <ManualConnect role="guest" playerName={playerName} />
+        <button class="btn-back" onclick={() => showManual = false}>← 返回</button>
+      {/if}
     </div>
 
   {:else if status === 'connected'}
@@ -155,6 +192,20 @@
     color: #e74c3c;
   }
 
+  .hint {
+    color: #8a7a5a;
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .timeout-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+    text-align: center;
+  }
+
   .btn-primary {
     background: #d4a843;
     color: #1a1008;
@@ -175,5 +226,33 @@
   .btn-primary:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  .btn-manual {
+    background: transparent;
+    color: #c8b888;
+    border: 1px dashed #5a4a2a;
+    border-radius: 6px;
+    padding: 0.5rem 1.2rem;
+    font-size: 0.88rem;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .btn-manual:hover {
+    border-color: #d4a843;
+    color: #d4a843;
+  }
+
+  .btn-back {
+    background: transparent;
+    color: #8a7a5a;
+    border: none;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 0.3rem 0;
+    text-decoration: underline;
   }
 </style>

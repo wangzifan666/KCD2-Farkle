@@ -5,11 +5,13 @@
   import { sendMessage } from '$lib/network/trystero';
   import type { GameConfig } from '$lib/game/types';
   import RulesConfig from './RulesConfig.svelte';
+  import ManualConnect from './ManualConnect.svelte';
 
   let roomCode = $state('');
   let shareUrl = $state('');
   let copied   = $state(false);
   let showRules = $state(false);
+  let showManual = $state(false);
   let playerName = $state('房主');
 
   function handleCreate() {
@@ -28,15 +30,30 @@
   }
 
   function handleStartGame(config: GameConfig) {
-    // 发送自身名字
     sendMessage({ type: 'player_ack', hostName: playerName });
     startGame(config);
   }
 
   // 监听连接状态
   let status = $state('idle');
+  let waitingSince = $state<number | null>(null);
   networkState.subscribe(ns => {
     status = ns.status;
+    waitingSince = ns.waitingSince;
+  });
+
+  // 已等待秒数（每秒更新）
+  let elapsedSeconds = $state(0);
+  $effect(() => {
+    if (status !== 'waiting_peer' || waitingSince === null) {
+      elapsedSeconds = 0;
+      return;
+    }
+    elapsedSeconds = Math.floor((Date.now() - waitingSince) / 1000);
+    const timer = setInterval(() => {
+      elapsedSeconds = Math.floor((Date.now() - (waitingSince ?? Date.now())) / 1000);
+    }, 1000);
+    return () => clearInterval(timer);
   });
 </script>
 
@@ -49,8 +66,18 @@
     </label>
     <button class="btn-primary" onclick={handleCreate}>创建房间</button>
 
-  {:else if status === 'waiting'}
-    <!-- 房间已创建，等待对手 -->
+  {:else if status === 'signaling'}
+    <div class="room-info">
+      <p class="room-label">房间码</p>
+      <p class="room-code">{roomCode}</p>
+      <div class="waiting">
+        <span class="dot-anim"></span>
+        正在连接 MQTT 服务器…
+      </div>
+    </div>
+
+  {:else if status === 'waiting_peer'}
+    <!-- 信令已就绪，等待对手加入 -->
     <div class="room-info">
       <p class="room-label">房间码</p>
       <p class="room-code">{roomCode}</p>
@@ -63,8 +90,21 @@
       </div>
       <div class="waiting">
         <span class="dot-anim"></span>
-        等待对手加入…
+        等待对手加入…{elapsedSeconds > 0 ? `（已等待 ${elapsedSeconds} 秒）` : ''}
       </div>
+    </div>
+
+  {:else if status === 'timeout'}
+    <div class="timeout-info">
+      <p class="error">⌛ 连接超时（60 秒），对方没有加入房间</p>
+      {#if !showManual}
+        <p class="hint">请检查网络连接，或尝试手动连接模式（无需服务器）</p>
+        <button class="btn-primary" onclick={handleCreate}>重新创建</button>
+        <button class="btn-manual" onclick={() => showManual = true}>⚡ 手动连接（备用）</button>
+      {:else}
+        <ManualConnect role="host" playerName={playerName} />
+        <button class="btn-back" onclick={() => showManual = false}>← 返回</button>
+      {/if}
     </div>
 
   {:else if status === 'connected'}
@@ -183,6 +223,14 @@
     background: #4a3e2a;
   }
 
+  .timeout-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+    text-align: center;
+  }
+
   .waiting {
     color: #8a7a5a;
     font-size: 0.9rem;
@@ -236,5 +284,33 @@
 
   .btn-primary:hover {
     background: #e8bf5a;
+  }
+
+  .btn-manual {
+    background: transparent;
+    color: #c8b888;
+    border: 1px dashed #5a4a2a;
+    border-radius: 6px;
+    padding: 0.5rem 1.2rem;
+    font-size: 0.88rem;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .btn-manual:hover {
+    border-color: #d4a843;
+    color: #d4a843;
+  }
+
+  .btn-back {
+    background: transparent;
+    color: #8a7a5a;
+    border: none;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 0.3rem 0;
+    text-decoration: underline;
   }
 </style>
